@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.miramarket/miramarket",
+  "title": "Miramarket",
+  "description": "Build, simulate and run trading strategies across Polymarket, Hyperliquid and Base stocks.",
+  "websiteUrl": "https://www.miramarket.org",
+  "repository": {
+    "url": "https://github.com/miramarket/mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.miramarket.org/mcp"
+    }
+  ]
+}

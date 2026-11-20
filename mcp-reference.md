@@ -1,0 +1,310 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.miramarket.org/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# MCP reference
+
+> For AI agents and developers: every Miramarket MCP tool, its inputs and results, the budget and approval rules, and what needs the account owner.
+
+This page is for an AI agent, or a developer building one, that works with a Miramarket account through MCP. It is meant to be fetched and read whole: [/mcp-reference.md](https://docs.miramarket.org/mcp-reference.md). For people connecting an assistant, see [Connect an AI assistant](https://docs.miramarket.org/mcp-server.md). For the strategy JSON format and the mistakes a validator cannot catch, see [/agent-strategy-guide.md](https://docs.miramarket.org/agent-strategy-guide.md).
+
+The trading server is `https://api.miramarket.org/mcp`. It is not `docs.miramarket.org/mcp`, which serves these docs to MCP clients for search.
+
+Trading involves risk, and leverage magnifies losses. A simulation (`mode: "demo"`) uses no real funds; a live run spends real capital. Execution and fills are not guaranteed. Miramarket is not financial, investment, legal, or tax advice.
+
+## Connection and sign-in
+
+* **Transport:** Streamable HTTP at `https://api.miramarket.org/mcp`. Every answer is an SSE stream that opens at once and sends a `: keepalive` comment frame every 10 seconds until the result, so a long tool call is never cut off by a proxy.
+* **Sign-in:** OAuth 2.1 with PKCE (`S256`). A request without a token gets `401` with a `WWW-Authenticate` header naming the resource metadata at `https://api.miramarket.org/.well-known/oauth-protected-resource/mcp`. The authorization server metadata is at `https://api.miramarket.org/.well-known/oauth-authorization-server`.
+* **Client identity:** a Client ID Metadata Document (preferred), or dynamic registration for public clients. A registration keeps only its loopback redirect URIs and https ones on a web AI platform's callback host (`claude.ai`, `chatgpt.com`, `grok.com`, `console.x.ai`, `www.cursor.com`), and the response lists the ones it kept; a registration with none is refused. A metadata document's redirect URIs must include at least one https or loopback URI; others, such as a custom URL scheme, are ignored. The document must allow a public client: `none` in `token_endpoint_auth_methods_supported` if it has that list, otherwise `none` or nothing in `token_endpoint_auth_method`. The client then signs in with PKCE and no client secret.
+* **Resource:** request tokens for `https://api.miramarket.org/mcp`. The authorization response includes `iss`; check that it is `https://api.miramarket.org`.
+* **Tokens:** access tokens last 15 minutes. Refresh tokens last 30 days and rotate on every use. If the answer to a refresh is lost, present the same refresh token again: it gets a new answer for up to a day after it was first used, as long as no token issued for it has been used; after that day it is refused as unknown. Keep only the newest token you received: once a token issued for a refresh token has been used, presenting that refresh token again, or another answer it got, ends the whole connection.
+* **Lifetime:** each refresh moves the connection's end to 90 days out, so a connection stays active while it is used. One left unused ends when its refresh token expires after 30 days, and the owner signs in again.
+
+### Scopes
+
+| Scope | Allows |
+| - | - |
+| `account:read` | Always granted. Read strategies, runs, and committed funds. |
+| `strategies:write` | Build, validate, and save strategies; start and stop simulations. |
+| `trade` | Start live runs within the connection's budget, ask the owner to approve ones beyond it, and stop live runs. |
+
+An MCP connection has no withdrawal scope and cannot place single orders or bridge; those switches exist only for a [Miramarket CLI](https://docs.miramarket.org/cli.md#sign-in) login. The owner chooses the scopes and the budget on the approval page, and may grant fewer than you asked for. Call `whoami` to see what you have.
+
+## What only the account owner can do
+
+Stop and ask the owner for these. Never attempt them yourself:
+
+* **Approve the connection** on the Miramarket approval page in their browser.
+* **Answer a live start beyond the budget** on **Connected agents** (`manageAt` from `whoami`, or the app's account menu).
+* **Withdraw funds**, in the app. Call `withdraw_in_app` to tell them where.
+* **Finish account setup** for live runs: accept the current policies and delegate their wallet.
+* **Change the budget or revoke the connection.**
+
+## Recommended flow
+
+1. Call `whoami` to learn your scopes, budget, and how much of it is in use.
+2. When the user asks for a strategy, search the news on what the request is about with your own web search tool: two or three searches from different angles. Do this whenever you have web search. Without your headlines, Miramarket searches the news itself, which makes the user wait longer.
+3. Call `strategy_generate` with the user's message as `request`, copied exactly as they typed it: not rephrased, shortened, or expanded, with nothing added. Pass your headlines as `news`. Do nothing else first: don't look up or pick markets yourself, and don't ask the user to choose markets, sides, or amounts. The pipeline picks the markets and designs the strategy, and when it needs the user it says so with a `market_selection` or `clarification` result.
+4. `strategy_generate` answers within about 5 seconds. While the build runs, it answers `working` with the steps so far. Tell the user each step in one short line, and call `strategy_generate_status` until it returns the result. Without that tool, call `strategy_generate` again with the same arguments: it continues the same build.
+5. Read `unmatched` and `notices` in the result. Anything listed there was substituted or left out; tell the user. Show the user the result's `summary` and link (`links`) so they see every leg. Hosts that render MCP Apps already show it as a card, so then keep your reply to a sentence or two.
+6. Then stop. The user simulates or runs the strategy themselves, with the amount and the **Simulate** and **Run Live** buttons on the card, or in Miramarket from the link, which opens the strategy in the builder with the same buttons. Don't offer to save, simulate, or run it, and don't ask the user to say or type anything to start it.
+7. Only when the user asks you to in words:
+   * Simulate: `strategy_post` with `mode: "demo"` and an `idempotency_key`, then `strategy_show`.
+   * Run with real money: confirm the strategy and amount with the user, save a draft (`strategy_post`, `mode: "draft"`), and call `strategy_start_live` with the strategy's exact principal and a new `idempotency_key`. Where no card shows, this is how a draft starts, because a saved draft's link only shows it. If the start waits for approval, send the user the `approveAt` link. Check `strategy_live_approval` no more than about every 10 seconds.
+   * Stop a run: `strategy_cancel`, after confirming with the user.
+
+There are two other ways to create a strategy:
+
+* **A precise request after your own research:** read `strategy_guide` with topic `"prompt"`, then pass the request to `strategy_generate`.
+* **Designing it yourself,** only when the user asks you to in words (for example "design it yourself" or "write the JSON"): read `strategy_guide` with topic `"design"`, look up the markets with `markets_search`, `markets_by_tag`, `perps_list`, `perps_search`, and `stocks_list`, write the strategy JSON (`strategy_guide` topic `"json"`), and check it with `strategy_validate`. `strategy_validate` returns no summary: describe the legs, amounts, and exits to the user before you post it. `strategy_post` then returns the `summary` and link for it.
+
+## Tools
+
+Every tool returns one text item. On success it holds JSON, except `strategy_guide`, which returns plain text. A tool that also returns `structuredContent` (a strategy card, or a `working` answer) puts the same fields there, such as `result`, `summary`, `links`, and `next`, because some hosts hand their model only the structured part. On failure the result has `isError: true`, and the text says what went wrong and what to do.
+
+`strategy_post`, `strategy_start_live`, and `strategy_cancel` change the account. Call each one on its own, never from inside a script or a batch of tool calls: the host may ask the user to confirm it, depending on its confirmation settings, and a host may fail a write called from a script. In ChatGPT that failure reads "The tool failed internally", and the same call succeeds when made on its own.
+
+### `whoami`
+
+What this connection may do. No input.
+
+```json theme={null}
+{
+  "client": "Claude Code",
+  "scopes": ["account:read", "strategies:write", "trade"],
+  "liveBudgetUsd": 100,
+  "openLiveUsd": 0,
+  "connectionExpiresAt": "2027-01-29T00:42:11.567Z",
+  "manageAt": "https://app.miramarket.org/settings/agents",
+  "note": "..."
+}
+```
+
+`liveBudgetUsd` and `openLiveUsd` are `null` without the `trade` scope. `manageAt` is **Connected agents**, where the owner changes the budget, answers waiting starts, and revokes the connection; it is also in the app's account menu. Send the owner there when they ask how to change any of these.
+
+### `capital_summary`
+
+Money committed to running strategies and pending withdrawals. No input. Needs `account:read`. Returns `lockedLiquidAtomic`, `pendingWithdrawalAtomic`, `positions`, and `reservations`. Amounts are atomic USDC with 6 decimals, so `1000000` is `$1`.
+
+### `strategies_list`
+
+The account's strategies, newest first: name, status, money, how the latest run stands, and a link. Needs `account:read`. `strategy_show` has a strategy's nodes.
+
+| Input | Type | |
+| - | - | - |
+| `include_archived` | boolean | Also list archived strategies. Default `false`; the result's `archivedNotShown` counts the ones left out. |
+
+### `strategy_show`
+
+One strategy: its nodes, status, principal (`initialPrincipalUsd`), latest run, and `url`, its page in the app. Needs `account:read`.
+
+| Input | Type | |
+| - | - | - |
+| `strategyId` | string | Required. From `strategies_list` or `strategy_post`. |
+
+### Market lookups
+
+For answering questions about markets, or for a strategy the user asked you to design yourself. For a strategy request, call `strategy_generate` instead: it finds the markets. The lookups read public data, so they need no scope, and a connection can make 30 a minute. Each row carries the ids a strategy node needs.
+
+| Tool | Input | Returns |
+| - | - | - |
+| `markets_search` | `query`: 2 to 4 words the way a market title would word them, such as `"Fed decision December"` | Open Polymarket markets: `market_id`, `question`, `event`, `yes` and `no` (each `{ price, token_id }`, `price` `null` when the live book could not confirm it), `liquidity_usd`, `volume_24h_usd`, `closes`, and the event's `tags`. Up to 20 rows. |
+| `markets_by_tag` | `tag`: a tag slug from `markets_search` results | Open Polymarket markets under that tag, most traded first, with the same columns. Use a tag specific to the situation, such as `"france-riots"`, not a broad one like `"politics"`. |
+| `perps_list` | `category`: one of `crypto`, `stocks`, `indices`, `commodities`, `fx`, `rates`, `preipo`, `other` | Hyperliquid perps in that category, most traded first: `market_id` (such as `hl:BTC` or `hl:xyz:NVDA`), `coin`, `dex`, `about` (what it tracks), `mark_usd`, `change_24h_pct`, `max_leverage`, `margin`, `funding_hourly_pct`, and `volume_24h_usd`. `price_is` explains a price that is not dollars per unit. |
+| `perps_search` | `query`: an asset's name or ticker, such as `"silver"`, `"NVDA"`, or `"xyz:TSLA"` | Matching perps in any category, with the same columns as `perps_list`. |
+| `stocks_list` | none | Tokenized stocks on Base, long only: `symbol`, `name`, `address`, `price_usd` (what a swap pays per share), `reference_price_usd` (what a `PRICE_USD` condition watches), and `condition_price_source`. Live runs check the account's region when they start. |
+
+In strategy JSON:
+
+* A Polymarket buy targets `{ venue: "POLYMARKET", market: { market_id, outcome_token: "YES" or "NO", token_id } }` with that side's `token_id`. An `IMPLIED_PROBABILITY` threshold is that side's price, from 0 to 1.
+* A perp's `market_id` and `token_id` are both the row's `market_id`, `outcome_token` is `"LONG"` or `"SHORT"`, and `leverage` (a whole number up to `max_leverage`) sits on the action target. A condition on it is `PRICE_USD` in mark-price dollars.
+* A stock's `venue` is `"BASE_STOCKS"`, `market_id` and `token_id` are both its `address`, and `outcome_token` is `"LONG"`.
+
+### `strategy_guide`
+
+How to design a strategy, or write its request or JSON. Returns text.
+
+| Input | Type | |
+| - | - | - |
+| `topic` | `"design"`, `"prompt"`, or `"json"` | Required. `"design"`: how Miramarket's research designs a strategy (the market lookups, the rules and checks it works under, and how each shape is written as JSON), for designing one yourself when the user asks you to. `"prompt"`: how to write a precise request for `strategy_generate` after your own research. `"json"`: the strategy shape and the rules to follow when writing it yourself. |
+
+You do not need it to pass the user's own words to `strategy_generate`.
+
+### `strategy_generate`
+
+Builds a strategy from a description with the same strategy assistant as the app. Nothing is saved. Needs `strategies:write`. A connection can start at most 10 builds a minute.
+
+| Input | Type | |
+| - | - | - |
+| `request` | string, up to 2,000 characters | The user's message exactly as they typed it: not rephrased, shortened, or expanded, with no topics, sides, markets, or levels of your own added. To answer a `clarification`, the user's answer as typed, with that result's `history`. To change a strategy, what to change. Required unless `choose` is given. |
+| `news` | array of up to 12 `{ title, source, date, summary, url }` | The headlines your own web search found on what the request is about, newest first. `title` is required; `date` is `YYYY-MM-DD`. Send them whenever you have web search: with them the build goes straight to the markets, and without them it runs its own news search, which is slower. |
+| `history` | array of up to 6 `{ role: "user" or "assistant", content }` | To answer a `clarification`: that result's `history`, as it came. |
+| `edit_strategy` | object | A strategy JSON to change instead of building from scratch. `request` then says what to change. |
+| `choose` | `{ "selection": string, "market": string }` | Answers a `market_selection`. Do not send `request` with it. |
+
+It answers within about 5 seconds. A build still running answers `working`:
+
+```json theme={null}
+{
+  "result": "working",
+  "job_id": "...",
+  "steps": ["Reading the news", "Checking 21 markets it could move"],
+  "seen": 2,
+  "next": "..."
+}
+```
+
+`steps` are what it is doing and the headlines it reads. Tell the user each step in one short line, then call `strategy_generate_status` with the `job_id` and `seen` until it returns one of the results below. A host without `strategy_generate_status` can send `strategy_generate` the same arguments again: it follows the same build rather than starting a second one, and does not count toward the 10 builds a minute. When the call carries a `progressToken`, the same steps also go out as progress notifications.
+
+The result's `result` field is one of:
+
+* **`"strategy"`:** `{ result, strategy, markets, stats, notices, unmatched, thesis, changeSummary, summary, links, next }`. By default the strategy uses two venues: a trade named on one venue gets one related position on another that bets the same way, for 30% of the budget, with the named amounts scaled to the other 70%. A notice names it and how to remove it, or says why the strategy stays on one venue. A request with "just", "only", "nothing else", or similar keeps one venue. `strategy` is the JSON to validate and post. `summary` is markdown to show the user: each leg's venue, market, side, amount, and leverage, how it runs, and notes. `links` opens it, unsaved, in the Miramarket builder.
+* **`"market_selection"`:** the request could mean several markets. `{ result, question, candidates: [{ choice, marketId, title, outcome, venue, currentPrice }], resumable, selection, next }`. Ask the user, then call again with `choose: { selection, market }`, where `market` is a `marketId` or a `choice` number. If `resumable` is `false`, there is a `reason` instead of `selection`; rephrase the request, naming the market precisely.
+* **`"clarification"`:** `{ result, question, history, next }`. Ask the user, then call again with `request` set to their answer exactly as typed and `history` set to this result's `history`.
+* **`"answer"`:** `{ result, answer }`. The user asked a question rather than for a strategy.
+
+After a `"strategy"` result, stop: the user simulates or runs it from the card or the link. Call `strategy_post` or `strategy_start_live` for it only when the user asks you to in words.
+
+### `strategy_generate_status`
+
+Follows a `strategy_generate` that answered `working`. Needs `strategies:write`. It answers within about 6 seconds with the next steps, or, once the strategy is built, with the result `strategy_generate` would have returned. A connection can call it 60 times a minute.
+
+| Input | Type | |
+| - | - | - |
+| `job_id` | string | Required. From the `working` answer. |
+| `seen` | integer | The `seen` count from the last answer: the steps already given. |
+
+### `strategy_validate`
+
+Checks a strategy JSON with the same validator `strategy_post` uses.
+
+| Input | Type | |
+| - | - | - |
+| `strategy` | object | Required. |
+
+Returns `{ "valid": boolean, "errors": string[] }`. Besides the structure, it refuses an `ROI_PCT` take-profit no price can reach, judged from the token's best ask now, or from the level of the price condition the buy waits on when that is its only condition and it watches the same token (a buy behind any other condition is not judged): for example `+20%` on a share that costs `0.90` would need `1.08`. Lower the take-profit or leave it out, and tell the user why. Passing does not mean the strategy does what was intended; `strategy_guide` topic `"json"` lists the mistakes it cannot catch.
+
+### `strategy_post`
+
+Validates and saves a strategy, refusing an unreachable `ROI_PCT` take-profit as `strategy_validate` does (a retry with an `idempotency_key` that already saved is not judged again). No real money moves. Needs `strategies:write`.
+
+| Input | Type | |
+| - | - | - |
+| `strategy` | object | Required. |
+| `name` | string, up to 120 characters | Shown in the app. |
+| `mode` | `"draft"` (default) or `"demo"` | `"draft"` checks that its markets can be traded, then saves it unstarted, ready for `strategy_start_live`. `"demo"` saves it and starts a simulated run. |
+| `idempotency_key` | string | Recommended. See [Retrying safely](#retrying-safely). |
+
+Returns `{ strategyId, name, mode, runId, url, summary, links, next }`. `runId` is `null` for a draft. `url` is the strategy's page in the app; show the user `summary` and the link. A draft's page only shows it and has no run button: where no card shows, `strategy_start_live` starts it.
+
+### `strategy_start_live`
+
+Starts a live run of a saved draft, committing its principal. Needs `trade`. Clients that honor `anthropic/requiresUserInteraction`, such as Claude Code, ask the user before every call.
+
+| Input | Type | |
+| - | - | - |
+| `strategy_id` | string | Required. A draft saved with `strategy_post`. |
+| `principal_usd` | number | Required. Must equal the strategy's principal, so the user confirms the real amount. |
+| `idempotency_key` | string | Required. |
+
+Within the budget, it starts now:
+
+```json theme={null}
+{ "strategyId": "...", "name": "...", "runId": "...", "principalUsd": 5, "live": true, "url": "https://app.miramarket.org/strategies/..." }
+```
+
+Beyond the budget, it waits for the owner:
+
+```json theme={null}
+{
+  "strategyId": "...",
+  "name": "...",
+  "principalUsd": 5,
+  "live": false,
+  "approval": "pending",
+  "approvalId": "...",
+  "budgetUsd": 1,
+  "openLiveUsd": 0,
+  "approveAt": "https://app.miramarket.org/settings/agents",
+  "next": "..."
+}
+```
+
+Calling again with the same key returns the same run or the same request, with `approval` showing where it stands. A start can also fail with a readable error. Common causes:
+
+* Unfinished account setup.
+* A market that cannot be traded.
+* A venue that is not available where the user is.
+* Not enough funds.
+
+### `strategy_live_approval`
+
+Where a start waiting for the owner stands.
+
+| Input | Type | |
+| - | - | - |
+| `approval_id` | string | Required. The `approvalId` from `strategy_start_live`. |
+
+Returns `{ status, strategyId, principalUsd, runId, error }`. `status` is one of:
+
+* `pending`: the owner hasn't answered yet.
+* `approved`: approved, and the run is starting.
+* `started`: the run started; `runId` is set.
+* `denied`: the owner refused it.
+* `expired`: unanswered for a day, or the connection ended.
+* `failed`: the start was attempted and refused; see `error`.
+
+### `strategy_cancel`
+
+Stops a run. Clients that honor `anthropic/requiresUserInteraction` ask the user first. Stopping a live run needs `trade`, and stopping a simulation needs `strategies:write`.
+
+| Input | Type | |
+| - | - | - |
+| `run_id` | string | Required. From `strategy_post`, `strategy_start_live`, or `strategy_show`. |
+
+Returns `{ runId, result: { message, success } }`. For a live run, open positions are closed at market in the background.
+
+### `withdraw_in_app`
+
+Agents cannot withdraw or move funds out of the account. Call this when the user wants to withdraw. No input. Returns `{ url, steps, why }` to pass on to the user.
+
+## Strategy cards
+
+`strategy_generate` (when it builds a strategy) and `strategy_post` also return the strategy as `structuredContent.card`, and declare an MCP App view for it (`text/html;profile=mcp-app`, in `_meta.ui.resourceUri` and `openai/outputTemplate`). Its address, `ui://miramarket/strategy-card-<hash>.html`, changes whenever the card changes, so a host that caches the card by address shows the new one. A client sees a new address after it reconnects. Other hosts get the same content as the text `summary`.
+
+Hosts that support MCP Apps, such as Claude and ChatGPT, render the card inline:
+
+* **While it builds:** a `working` answer carries `structuredContent.job`, and the card shows the steps and follows the build itself until the strategy comes, in one panel. `strategy_generate_status` has no card of its own.
+* **The strategy:** one step card per condition or order, indented under the step it follows, with the market's picture and side, the total, how it runs, and the notes. A researched build also shows **What it read**, its newest headlines.
+* **Running it:** an amount (at least `$5`) and a **Simulate** / **Run Live** button. **Simulate** calls `strategy_post` with `mode: "demo"`. **Run Live** asks the user once more in the card, saves a draft, and calls `strategy_start_live`; a start beyond the budget shows the approval link. The card calls these tools through the host and tells you what the user did.
+* **Open in Miramarket:** a built strategy's link opens it, unsaved, in the builder; a saved one's opens its page in the app.
+
+## Budget rules
+
+* `liveBudgetUsd` caps the combined principal of the live runs this connection started that still have money in the market. A run counts while it is running, and after it finishes until its positions close. `openLiveUsd` is that combined principal now.
+* A start fits when `openLiveUsd + principal_usd` is at most `liveBudgetUsd`. A start that fits begins at once; one that doesn't waits for the owner and expires after a day.
+* Only the owner sets the budget (on the approval page) or changes it (**Change budget** on Connected agents). A new budget applies from your next `strategy_start_live`; you cannot change it.
+
+## Retrying safely
+
+`strategy_post` and `strategy_start_live` take an `idempotency_key`: 1 to 200 letters, digits, `.`, `_`, `:` or `-`. Keys are per account.
+
+* Use a new key for each new post or start.
+* After a timeout, retry with the same key. You get the first result instead of a second strategy or a second live run.
+* A key already used for a different strategy is refused.
+* A key used for a simulation never answers a live start, and the other way around.
+
+## Errors and limits
+
+* **Tool error** (`isError: true`): the text explains it. For a missing scope, ask the owner to reconnect and allow it.
+* **HTTP `401`:** the access token expired or the connection ended. Refresh the token. If the refresh fails with `invalid_grant`, the connection was revoked or ended; ask the owner to connect again.
+* **HTTP `429`:** too many requests. Wait for the `Retry-After` seconds.
+* **Rate limits:**
+  * `/mcp`: 240 requests a minute per connection, and at most 6,000 a minute from one IP across connections.
+  * Token exchange, refresh, and revocation: 600 a minute per IP. Registration: 120 a minute per IP. The sign-in pages a person opens: 30 a minute per IP.
+  * `strategy_generate`: 10 builds a minute per connection. `strategy_generate_status`, and a `strategy_generate` that follows a build already running: 60 a minute.
+  * Market lookups (`markets_search`, `markets_by_tag`, `perps_list`, `perps_search`, `stocks_list`): 30 a minute per connection.
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.
