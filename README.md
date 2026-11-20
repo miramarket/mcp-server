@@ -5,7 +5,7 @@ three kinds of market from one place: prediction markets on Polymarket, perpetua
 Hyperliquid (crypto, stocks, indices, commodities, FX, rates), and tokenized stocks on Base.
 
 An AI assistant connected to this server can look up markets, build a strategy from a plain-English
-request, simulate it, and — only if you allow it, and only up to a budget you set — start a live run
+request, simulate it, and (only if you allow it, and only up to a budget you set) start a live run
 with real money.
 
 - **Endpoint:** `https://api.miramarket.org/mcp`
@@ -68,7 +68,7 @@ any time from **Connected agents** in the app.
 
 | Tool | What it does | Scope |
 | - | - | - |
-| `whoami` | This connection's scopes, live budget, how much of it is in use. | — |
+| `whoami` | This connection's scopes, live budget, how much of it is in use. | none |
 | `capital_summary` | Money committed to running strategies and pending withdrawals. | `account:read` |
 | `strategies_list` | The account's strategies, newest first, with status and money. | `account:read` |
 | `strategy_show` | One strategy's nodes, principal, latest run and app link. | `account:read` |
@@ -77,17 +77,17 @@ any time from **Connected agents** in the app.
 | `perps_list` | Hyperliquid perps by category, with mark price, funding and max leverage. | public |
 | `perps_search` | Hyperliquid perps by name or ticker. | public |
 | `stocks_list` | Tokenized stocks on Base, with swap price and the price a condition watches. | public |
-| `strategy_guide` | How to design a strategy, write its request, or write its JSON. | — |
+| `strategy_guide` | How to design a strategy, write its request, or write its JSON. | none |
 | `strategy_generate` | Builds a strategy from a description with the same assistant as the app. | `strategies:write` |
 | `strategy_generate_status` | Follows a build that answered `working`. | `strategies:write` |
-| `strategy_validate` | Checks a strategy JSON with the same validator the app uses. | — |
+| `strategy_validate` | Checks a strategy JSON with the same validator the app uses. | none |
 | `strategy_post` | Saves a strategy as a draft or starts a simulation. No real money moves. | `strategies:write` |
 | `strategy_start_live` | Starts a saved draft with real money, within the budget or with the owner's approval. | `trade` |
-| `strategy_live_approval` | Where a live start waiting for the owner stands. | — |
+| `strategy_live_approval` | Where a live start waiting for the owner stands. | none |
 | `strategy_cancel` | Stops a run; a live run's open positions close at market. | `trade` / `strategies:write` |
-| `withdraw_in_app` | Points the owner to the app, because agents cannot withdraw. | — |
+| `withdraw_in_app` | Points the owner to the app, because agents cannot withdraw. | none |
 
-A strategy the assistant builds is shown to you leg by leg — venue, market, side, amount, leverage —
+A strategy the assistant builds is shown to you leg by leg (venue, market, side, amount, leverage)
 before anything happens. In hosts that render MCP Apps (Claude, ChatGPT) it arrives as an inline
 card with **Simulate** and **Run Live** buttons; elsewhere it arrives as a summary and a link that
 opens the strategy in the Miramarket builder.
@@ -117,5 +117,5 @@ mcp-publisher publish
 
 ## License
 
-Documentation in this repository may be read and quoted freely. Miramarket itself is proprietary —
+Documentation in this repository may be read and quoted freely. Miramarket itself is proprietary:
 the hosted server, the app and the strategy engine are not distributed here.
