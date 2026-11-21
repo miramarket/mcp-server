@@ -4,11 +4,18 @@
   "title": "Miramarket",
   "description": "Research, build, simulate and run trading strategies on Hyperliquid, Base stocks and Polymarket.",
   "websiteUrl": "https://www.miramarket.org",
+  "icons": [
+    {
+      "src": "https://app.miramarket.org/branding/apple-touch-icon.png",
+      "mimeType": "image/png",
+      "sizes": ["374x374"]
+    }
+  ],
   "repository": {
     "url": "https://github.com/miramarket/mcp-server",
     "source": "github"
   },
-  "version": "1.0.1",
+  "version": "1.0.2",
   "remotes": [
     {
       "type": "streamable-http",
