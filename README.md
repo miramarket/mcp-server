@@ -92,6 +92,25 @@ before anything happens. In hosts that render MCP Apps (Claude, ChatGPT) it arri
 card with **Simulate** and **Run Live** buttons; elsewhere it arrives as a summary and a link that
 opens the strategy in the Miramarket builder.
 
+## Example requests
+
+The server takes the same requests the app's assistant does. Once connected:
+
+- "Show my strategies and how their runs are going."
+- "Build a strategy around this week's Fed meeting." Say "just" or "only" to keep it to one venue; a built
+  strategy otherwise adds a related position on another venue for 30% of the budget.
+- "Long BTC 3x if Fed rate cut odds go above 70%." A Hyperliquid perp triggered by a Polymarket price.
+- "Simulate it with 50 USD." Then, after reading the legs on the card, "run it live".
+
+## Related pages
+
+- [Claude trading bot](https://www.miramarket.org/claude-trading-bot): the Claude Code command, the connector
+  for Claude on the web, and what the strategy card lets you do in chat.
+- [Polymarket MCP server](https://www.miramarket.org/polymarket-mcp): what this server answers for Polymarket
+  specifically, and the guardrails in plain language.
+- [Polymarket trading bots compared](https://www.miramarket.org/polymarket-trading-bots): where an agent sits
+  next to a hosted terminal, a stop-loss service, copy trading and an open-source bot.
+
 ## Safety boundary
 
 - The agent never withdraws. Withdrawals happen in the app, by the account owner.
